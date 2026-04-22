@@ -11,10 +11,13 @@ export async function verifyTurnstile(
 ): Promise<boolean> {
   const secret = process.env.TURNSTILE_SECRET_KEY;
   if (!secret) {
-    // If the operator hasn't configured Turnstile, fail closed in prod and
-    // open in dev. Matches "you can't forget to wire it" posture.
-    if (process.env.NODE_ENV === "production") return false;
-    console.warn("TURNSTILE_SECRET_KEY missing — allowing request in dev");
+    // Turnstile not configured. Fail OPEN — the rate-limit + spend-cap
+    // gates still protect us from the worst abuse. Add Turnstile when
+    // you need another layer (scripted abuse past the rate-limit, for
+    // instance). Log loudly so this isn't silent in production.
+    console.warn(
+      "[turnstile] TURNSTILE_SECRET_KEY not set — accepting request without verification",
+    );
     return true;
   }
   if (!token) return false;

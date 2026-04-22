@@ -6,8 +6,10 @@
 // rendered site at /<slug>.
 import "~/styles/tokens.css";
 
-const turnstileSiteKey =
-  import.meta.env.PUBLIC_TURNSTILE_SITE_KEY ?? "";
+const turnstileSiteKey = (
+  import.meta.env.PUBLIC_TURNSTILE_SITE_KEY ?? ""
+).trim();
+const turnstileEnabled = turnstileSiteKey.length > 0;
 ---
 
 <!doctype html>
@@ -26,11 +28,13 @@ const turnstileSiteKey =
       content="Lecture PDFs in, interactive study site out. 90 seconds. No account."
     />
     <meta property="og:type" content="website" />
-    <script
-      is:inline
-      src="https://challenges.cloudflare.com/turnstile/v0/api.js"
-      async
-      defer></script>
+    {turnstileEnabled && (
+      <script
+        is:inline
+        src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+        async
+        defer></script>
+    )}
     <style>
       .wrap {
         max-width: 56ch;
@@ -215,13 +219,15 @@ const turnstileSiteKey =
           hidden
         />
 
-        <div
-          class="cf-turnstile"
-          data-sitekey={turnstileSiteKey}
-          data-size="invisible"
-          id="turnstileWidget"
-        >
-        </div>
+        {turnstileEnabled && (
+          <div
+            class="cf-turnstile"
+            data-sitekey={turnstileSiteKey}
+            data-size="invisible"
+            id="turnstileWidget"
+          >
+          </div>
+        )}
 
         <button
           class="generate hidden"
@@ -439,17 +445,18 @@ const turnstileSiteKey =
       }
 
       async function getTurnstileToken(): Promise<string | null> {
-        // Turnstile invisible: call turnstile.execute and wait for a token
+        // If the Turnstile widget wasn't rendered (no site key configured),
+        // the server-side verifier fails open. Send a placeholder so
+        // /api/generate's "token missing" check passes.
+        const widget = document.getElementById("turnstileWidget");
+        if (!widget) return "no-turnstile-configured";
+
         const turnstile = (window as any).turnstile;
-        if (!turnstile) {
-          // In dev without a site key, the server-side verifier is fail-open
-          return "dev-mode-no-turnstile";
-        }
+        if (!turnstile) return "no-turnstile-configured";
+
         return new Promise((resolve) => {
           const widgetId = turnstile.render("#turnstileWidget", {
-            sitekey: document
-              .getElementById("turnstileWidget")!
-              .getAttribute("data-sitekey"),
+            sitekey: widget.getAttribute("data-sitekey"),
             size: "invisible",
             callback: (token: string) => resolve(token),
             "error-callback": () => resolve(null),

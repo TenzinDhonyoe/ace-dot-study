@@ -16,7 +16,6 @@ export interface ExtractedPdf {
 // Vite `?url` asset import — more reliable across dev + prod than
 // `new URL(specifier, import.meta.url)`. The worker is served as a
 // static asset; the URL points at its bundled path.
-// @ts-expect-error — Vite-specific suffix, no types
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
 export async function extractPdf(file: File): Promise<ExtractedPdf> {
