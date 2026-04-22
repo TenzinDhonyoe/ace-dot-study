@@ -1,8 +1,13 @@
 ---
-// Landing page. Quiet / editorial voice — the first paragraph sets the tone
-// for the whole product. Don't add marketing fluff here (see ADR 001 + the
-// design review in docs/phase2-hosted-plan.md).
+// Landing page. Quiet / editorial voice — the first paragraph sets the
+// tone for the whole product. The upload flow and the generating UI live
+// on this same page (no navigation) so the SSE connection stays attached
+// through the full 60-180s generation. Once complete, we redirect to the
+// rendered site at /<slug>.
 import "~/styles/tokens.css";
+
+const turnstileSiteKey =
+  import.meta.env.PUBLIC_TURNSTILE_SITE_KEY ?? "";
 ---
 
 <!doctype html>
@@ -15,16 +20,20 @@ import "~/styles/tokens.css";
       name="description"
       content="Drop three lecture PDFs. Get back an interactive study site in 90 seconds. No account. Link-shareable."
     />
-    <!-- Open Graph for share cards -->
     <meta property="og:title" content="ace.study" />
     <meta
       property="og:description"
       content="Lecture PDFs in, interactive study site out. 90 seconds. No account."
     />
     <meta property="og:type" content="website" />
+    <script
+      is:inline
+      src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+      async
+      defer></script>
     <style>
       .wrap {
-        max-width: 52ch;
+        max-width: 56ch;
         margin: 0 auto;
         padding: clamp(24px, 6vw, 56px) clamp(16px, 5vw, 24px)
           clamp(48px, 8vw, 120px);
@@ -59,11 +68,48 @@ import "~/styles/tokens.css";
           background 0.15s ease;
       }
       .drop:hover,
-      .drop:focus-visible {
+      .drop:focus-visible,
+      .drop.is-drag {
         border-color: var(--accent);
         color: var(--ink);
         background: var(--accent-soft);
         outline: none;
+      }
+      .drop[disabled] {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .filelist {
+        margin: 14px 0 0;
+        padding: 0;
+        list-style: none;
+        font-family: var(--sans);
+        font-size: 13.5px;
+        color: var(--muted);
+      }
+      .filelist li {
+        padding: 2px 0;
+      }
+      .generate {
+        display: block;
+        width: 100%;
+        margin-top: 16px;
+        font-family: var(--sans);
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--paper);
+        background: var(--ink);
+        border: none;
+        border-radius: 8px;
+        padding: 14px 20px;
+        cursor: pointer;
+      }
+      .generate:hover {
+        background: var(--accent);
+      }
+      .generate[disabled] {
+        opacity: 0.4;
+        cursor: default;
       }
       .example {
         margin: clamp(20px, 4vw, 28px) 0 0;
@@ -71,15 +117,72 @@ import "~/styles/tokens.css";
         font-size: 13.5px;
         color: var(--muted);
       }
-      .example a {
-        font-family: var(--mono);
-        font-size: 13px;
-      }
       .foot {
         margin: clamp(56px, 10vw, 96px) 0 0;
         font-family: var(--sans);
         font-size: 12.5px;
         color: var(--muted);
+      }
+
+      /* Generating view */
+      .gen-head {
+        font-family: var(--sans);
+        font-size: 14px;
+        color: var(--muted);
+        margin: 0 0 20px;
+      }
+      .gen-url {
+        font-family: var(--mono);
+        font-size: 15px;
+        color: var(--ink);
+        background: var(--accent-soft);
+        padding: 2px 6px;
+        border-radius: 4px;
+      }
+      .divider {
+        font-family: var(--sans);
+        font-size: 12px;
+        color: var(--muted);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        margin: 32px 0 20px;
+        border-top: 1px solid var(--rule);
+        padding-top: 16px;
+      }
+      .stream {
+        font-family: var(--serif);
+        font-size: 15.5px;
+        line-height: 1.7;
+        min-height: 200px;
+        white-space: pre-wrap;
+      }
+      .cursor {
+        display: inline-block;
+        width: 0.6ch;
+        background: var(--ink);
+        animation: blink 1s steps(2, start) infinite;
+        vertical-align: -2px;
+      }
+      .cursor::before {
+        content: "\00a0";
+      }
+      @keyframes blink {
+        50% {
+          opacity: 0;
+        }
+      }
+      .error {
+        font-family: var(--sans);
+        font-size: 14px;
+        color: var(--warn);
+        background: color-mix(in oklab, var(--warn) 8%, transparent);
+        border: 1px solid var(--warn);
+        border-radius: 6px;
+        padding: 12px 14px;
+        margin-top: 16px;
+      }
+      .hidden {
+        display: none !important;
       }
     </style>
   </head>
@@ -87,42 +190,260 @@ import "~/styles/tokens.css";
     <main class="wrap">
       <p class="wordmark">ace.study</p>
 
-      <p class="lede">
-        Drop three lecture PDFs. Get back an interactive study site in 90
-        seconds. No account. Link-shareable.
-      </p>
+      <!-- Upload view -->
+      <section id="uploadView">
+        <p class="lede">
+          Drop three lecture PDFs. Get back an interactive study site in 90
+          seconds. No account. Link-shareable.
+        </p>
 
-      <button
-        class="drop"
-        id="uploadBtn"
-        type="button"
-        aria-label="Add lecture PDFs"
-      >
-        Tap to add PDFs or paste a link
-      </button>
+        <button
+          class="drop"
+          id="uploadBtn"
+          type="button"
+          aria-label="Add lecture PDFs"
+        >
+          Tap to add PDFs
+        </button>
+        <ul class="filelist" id="fileList"></ul>
 
-      <p class="example">
-        See an example: <a href="/">ace.study/bme804-ex</a> <em>(soon)</em>
-      </p>
+        <input
+          type="file"
+          id="fileInput"
+          accept="application/pdf,.pdf"
+          multiple
+          hidden
+        />
 
-      <p class="foot">
-        Open source on
-        <a href="https://github.com/TenzinDhonyoe/ace">GitHub</a>.
-      </p>
+        <div
+          class="cf-turnstile"
+          data-sitekey={turnstileSiteKey}
+          data-size="invisible"
+          id="turnstileWidget"
+        >
+        </div>
+
+        <button
+          class="generate hidden"
+          id="generateBtn"
+          type="button"
+          disabled
+        >
+          Generate
+        </button>
+
+        <p class="example">
+          See an example: <em>(coming soon)</em>
+        </p>
+
+        <p class="foot">
+          Open source on
+          <a href="https://github.com/TenzinDhonyoe/ace">GitHub</a>.
+        </p>
+      </section>
+
+      <!-- Generating view -->
+      <section id="genView" class="hidden">
+        <p class="gen-head">
+          Your site will live at:
+          <span class="gen-url" id="genUrl">ace.study/—</span>
+          <button id="copyBtn" aria-label="Copy URL" style="margin-left:4px"
+            >⧉</button
+          >
+        </p>
+
+        <p class="divider">Generating</p>
+
+        <div class="stream" id="stream" aria-live="polite">
+          <span class="cursor" aria-hidden="true"></span>
+        </div>
+
+        <div id="errorBox" class="error hidden"></div>
+      </section>
     </main>
 
     <script>
-      // Upload zone is just a button on the landing page. Real drag-drop +
-      // pdf.js extraction is lazy-loaded on first click so we don't ship a
-      // 2MB pdf.js bundle to visitors who never upload (see design review).
-      document
-        .getElementById("uploadBtn")
-        ?.addEventListener("click", async () => {
-          // TODO: dynamic import pdf.js + open file picker
-          alert(
-            "Upload flow is a stub. Next commit wires up pdf.js + the generate API.",
+      import { extractPdfs } from "~/lib/pdf-extract";
+      import { consumeGenerateStream } from "~/lib/sse-client";
+
+      const uploadBtn = document.getElementById(
+        "uploadBtn",
+      ) as HTMLButtonElement;
+      const fileInput = document.getElementById(
+        "fileInput",
+      ) as HTMLInputElement;
+      const fileList = document.getElementById("fileList") as HTMLUListElement;
+      const generateBtn = document.getElementById(
+        "generateBtn",
+      ) as HTMLButtonElement;
+      const uploadView = document.getElementById(
+        "uploadView",
+      ) as HTMLElement;
+      const genView = document.getElementById("genView") as HTMLElement;
+      const genUrl = document.getElementById("genUrl") as HTMLSpanElement;
+      const copyBtn = document.getElementById("copyBtn") as HTMLButtonElement;
+      const stream = document.getElementById("stream") as HTMLDivElement;
+      const errorBox = document.getElementById("errorBox") as HTMLDivElement;
+
+      let picked: File[] = [];
+
+      uploadBtn.addEventListener("click", () => fileInput.click());
+
+      // Drag-drop
+      uploadBtn.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        uploadBtn.classList.add("is-drag");
+      });
+      uploadBtn.addEventListener("dragleave", () =>
+        uploadBtn.classList.remove("is-drag"),
+      );
+      uploadBtn.addEventListener("drop", (e) => {
+        e.preventDefault();
+        uploadBtn.classList.remove("is-drag");
+        const files = Array.from(e.dataTransfer?.files ?? []).filter((f) =>
+          f.name.toLowerCase().endsWith(".pdf"),
+        );
+        handlePicked(files);
+      });
+
+      fileInput.addEventListener("change", () => {
+        const files = Array.from(fileInput.files ?? []);
+        handlePicked(files);
+      });
+
+      function handlePicked(files: File[]) {
+        if (!files.length) return;
+        picked = files;
+        fileList.innerHTML = files
+          .map((f) => `<li>${escapeHtml(f.name)} (${kb(f.size)} KB)</li>`)
+          .join("");
+        generateBtn.classList.remove("hidden");
+        generateBtn.disabled = false;
+      }
+
+      generateBtn.addEventListener("click", async () => {
+        generateBtn.disabled = true;
+        generateBtn.textContent = "Reading PDFs…";
+
+        // 1. Extract text from PDFs (client-side, pdf.js)
+        let pdfText: string;
+        try {
+          const ex = await extractPdfs(picked);
+          pdfText = ex.text;
+        } catch (e) {
+          showError(
+            `Couldn't read the PDF: ${(e as Error).message}. If it's encrypted, remove the password and try again.`,
           );
+          return;
+        }
+
+        // 2. Get a Turnstile token
+        const turnstileToken = await getTurnstileToken();
+        if (!turnstileToken) {
+          showError("Captcha didn't verify. Refresh and try again.");
+          return;
+        }
+
+        // 3. Switch to generating view
+        uploadView.classList.add("hidden");
+        genView.classList.remove("hidden");
+
+        // 4. POST and stream
+        const res = await fetch("/api/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pdfText,
+            meta: {},
+            turnstileToken,
+          }),
         });
+
+        let slug: string | null = null;
+
+        try {
+          for await (const event of consumeGenerateStream(res)) {
+            switch (event.type) {
+              case "slug":
+                slug = event.slug;
+                genUrl.textContent = `${location.host}/${slug}`;
+                history.replaceState(null, "", `/g/${slug}`);
+                // Remove the blinking cursor once narration starts
+                break;
+              case "narration":
+                appendNarration(event.text);
+                break;
+              case "complete":
+                if (event.slug) {
+                  // Tiny delay so the last narration line gets to render
+                  setTimeout(() => {
+                    location.href = `/${event.slug}`;
+                  }, 600);
+                }
+                break;
+              case "error":
+                showError(event.message);
+                break;
+            }
+          }
+        } catch (e) {
+          showError(`Stream disconnected: ${(e as Error).message}`);
+        }
+      });
+
+      copyBtn.addEventListener("click", () => {
+        navigator.clipboard.writeText(genUrl.textContent || "");
+        copyBtn.textContent = "✓";
+        setTimeout(() => (copyBtn.textContent = "⧉"), 1500);
+      });
+
+      function appendNarration(text: string) {
+        // Remove the cursor, append text, re-add cursor at the end
+        const cursor = stream.querySelector(".cursor");
+        cursor?.remove();
+        stream.append(document.createTextNode(text));
+        const c = document.createElement("span");
+        c.className = "cursor";
+        c.setAttribute("aria-hidden", "true");
+        stream.append(c);
+      }
+
+      function showError(msg: string) {
+        errorBox.textContent = msg;
+        errorBox.classList.remove("hidden");
+        generateBtn.disabled = false;
+        generateBtn.textContent = "Try again";
+      }
+
+      async function getTurnstileToken(): Promise<string | null> {
+        // Turnstile invisible: call turnstile.execute and wait for a token
+        const turnstile = (window as any).turnstile;
+        if (!turnstile) {
+          // In dev without a site key, the server-side verifier is fail-open
+          return "dev-mode-no-turnstile";
+        }
+        return new Promise((resolve) => {
+          const widgetId = turnstile.render("#turnstileWidget", {
+            sitekey: document
+              .getElementById("turnstileWidget")!
+              .getAttribute("data-sitekey"),
+            size: "invisible",
+            callback: (token: string) => resolve(token),
+            "error-callback": () => resolve(null),
+          });
+          turnstile.execute(widgetId);
+        });
+      }
+
+      function kb(bytes: number): number {
+        return Math.round(bytes / 1024);
+      }
+      function escapeHtml(s: string): string {
+        return s
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
     </script>
   </body>
 </html>

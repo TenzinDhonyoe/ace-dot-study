@@ -8,7 +8,9 @@ import {
 } from "~/lib/redis";
 import { verifyTurnstile } from "~/lib/turnstile";
 import { newSlug } from "~/lib/slug";
-import { ESTIMATED_COST_CENTS } from "~/lib/anthropic";
+import { ESTIMATED_COST_CENTS, streamGenerate } from "~/lib/anthropic";
+import { render } from "~/lib/render";
+import { storeSite } from "~/lib/storage";
 
 export const prerender = false;
 
@@ -20,13 +22,14 @@ export const prerender = false;
  *   2. Check global daily spend cap (Redis GET)     ~5ms
  *   3. Check per-IP rate limit (Redis GET)          ~5ms
  *   4. Verify Turnstile server-side                 ~50ms, spends quota
- *   5. Increment per-IP counter                     ~5ms write
- *   6. Emit SSE { slug } — user sees URL NOW
- *   7. Stream Anthropic (60-180s)                   EXPENSIVE
- *   8. On success: INCR global spend counter atomically
- *   9. On success: write config + html to Blob
+ *   5. Emit SSE { slug } — user sees URL NOW
+ *   6. Stream Anthropic via streamGenerate()        60–180s
+ *   7. Render config → HTML via ace-study-template
+ *   8. Write config + html to Vercel Blob
+ *   9. Increment global spend counter atomically
+ *  10. Emit { complete, slug }
  *
- * BYOK (X-Anthropic-Key header set) skips gates 2, 3, 5, 8.
+ * BYOK (X-Anthropic-Key header set) skips gates 2, 3, 9.
  */
 export const POST: APIRoute = async ({ request, clientAddress }) => {
   const enc = new TextEncoder();
@@ -41,15 +44,67 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
         controller.close();
       };
 
+      try {
+        await runPipeline(request, clientAddress, emit, fail, controller);
+      } catch (e) {
+        console.error("/api/generate unhandled:", e);
+        try {
+          fail(
+            "internal",
+            `Internal error: ${(e as Error).message}`,
+            true,
+          );
+        } catch {
+          try {
+            controller.close();
+          } catch {}
+        }
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    },
+  });
+};
+
+async function runPipeline(
+  request: Request,
+  clientAddress: string | undefined,
+  emit: (event: GenerateEvent) => void,
+  fail: (code: ErrorCode, message: string, retryable?: boolean) => void,
+  controller: ReadableStreamDefaultController,
+): Promise<void> {
+  {
       // --- 1. Parse request ---
-      let body: { pdfText?: string; meta?: unknown; turnstileToken?: string };
+      let body: {
+        pdfText?: string;
+        meta?: { course?: string; examDate?: string; institution?: string };
+        turnstileToken?: string;
+      };
       try {
         body = await request.json();
       } catch {
         return fail("internal", "Malformed request body");
       }
+      if (!body.pdfText || typeof body.pdfText !== "string") {
+        return fail("invalid_pdf", "No PDF text provided");
+      }
+      if (body.pdfText.length > 500_000) {
+        return fail(
+          "invalid_pdf",
+          "Lecture text too long (>500k chars). Split across multiple generations.",
+        );
+      }
+
       const byokKey = request.headers.get("X-Anthropic-Key") || undefined;
-      const ip = clientAddress || request.headers.get("x-forwarded-for") || "unknown";
+      const ip =
+        clientAddress || request.headers.get("x-forwarded-for") || "unknown";
 
       // --- 2. Spend cap (house key only) ---
       if (!byokKey) {
@@ -87,30 +142,80 @@ export const POST: APIRoute = async ({ request, clientAddress }) => {
       const slug = newSlug();
       emit({ type: "slug", slug });
 
-      // --- 6-9. TODO: stream Anthropic → validate → render → store ---
-      emit({
-        type: "error",
-        code: "internal",
-        message:
-          "Generation pipeline is a stub. Next commit wires up Anthropic streaming + ace-study-template rendering + Blob write.",
-        retryable: false,
-      });
+      // --- 6. Stream Anthropic ---
+      const apiKey = byokKey ?? process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) {
+        return fail("internal", "Server is missing ANTHROPIC_API_KEY");
+      }
 
-      // On eventual success, we'll:
-      //   await incrementSpendCents(actualCostCents);
-      //   await storeSite(slug, html, config);
-      //   emit({ type: "complete", slug, partial: false });
+      let config: unknown = null;
+      try {
+        for await (const event of streamGenerate(apiKey, {
+          pdfText: body.pdfText,
+          meta: body.meta,
+        })) {
+          if (event.type === "__config") {
+            config = event.config;
+            continue;
+          }
+          emit(event);
+          if (event.type === "error") {
+            controller.close();
+            return;
+          }
+        }
+      } catch (e) {
+        return fail(
+          "anthropic_down",
+          `Generation failed: ${(e as Error).message}`,
+          true,
+        );
+      }
 
+      if (!config) {
+        return fail(
+          "internal",
+          "Stream ended without a site config. Try again.",
+          true,
+        );
+      }
+
+      // --- 7. Render ---
+      let html: string;
+      try {
+        html = render(config);
+      } catch (e) {
+        return fail(
+          "internal",
+          `Rendering failed: ${(e as Error).message}. The generated config didn't match the schema.`,
+          true,
+        );
+      }
+
+      // --- 8. Store to Blob ---
+      try {
+        await storeSite(slug, html, config);
+      } catch (e) {
+        return fail(
+          "internal",
+          `Storage failed: ${(e as Error).message}`,
+          true,
+        );
+      }
+
+      // --- 9. Increment spend counter (house key only) ---
+      // Fail CLOSED: if this write fails, we've already generated and
+      // stored — but the counter is best-effort; logging is enough.
+      if (!byokKey) {
+        try {
+          await incrementSpendCents(ESTIMATED_COST_CENTS);
+        } catch (e) {
+          console.error("spend-counter write failed:", e);
+        }
+      }
+
+      // --- 10. Done ---
+      emit({ type: "complete", slug, partial: false });
       controller.close();
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
-    },
-  });
-};
+  }
+}

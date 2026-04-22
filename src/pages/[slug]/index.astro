@@ -18,8 +18,7 @@ if (!upstream.ok) {
   return new Response("Not found", { status: 404 });
 }
 
-const html = await upstream.text();
-return new Response(html, {
+return new Response(await upstream.text(), {
   headers: {
     "Content-Type": "text/html; charset=utf-8",
     "X-Robots-Tag": "noindex, nofollow",
