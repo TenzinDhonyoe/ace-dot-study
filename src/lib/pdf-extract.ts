@@ -13,19 +13,26 @@ export interface ExtractedPdf {
   text: string;
 }
 
+// Vite `?url` asset import — more reliable across dev + prod than
+// `new URL(specifier, import.meta.url)`. The worker is served as a
+// static asset; the URL points at its bundled path.
+// @ts-expect-error — Vite-specific suffix, no types
+import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+
 export async function extractPdf(file: File): Promise<ExtractedPdf> {
+  console.log("[pdf] extracting", file.name, file.size, "bytes");
+
   // Dynamic import keeps pdf.js off the landing-page bundle.
   const pdfjs = await import("pdfjs-dist");
-  // Configure the worker to come from the same bundle. Vite handles
-  // `new URL(...)` imports correctly in production + dev.
-  pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-    "pdfjs-dist/build/pdf.worker.min.mjs",
-    import.meta.url,
-  ).toString();
+  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+  console.log("[pdf] workerSrc set to", workerUrl);
 
   const buf = await file.arrayBuffer();
+  console.log("[pdf] arrayBuffer ok,", buf.byteLength, "bytes");
+
   const task = pdfjs.getDocument({ data: buf });
   const doc = await task.promise;
+  console.log("[pdf] doc loaded, pages:", doc.numPages);
 
   const parts: string[] = [];
   for (let i = 1; i <= doc.numPages; i++) {

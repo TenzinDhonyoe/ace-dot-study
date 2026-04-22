@@ -321,15 +321,38 @@ const turnstileSiteKey =
         generateBtn.disabled = false;
       }
 
+      window.addEventListener("unhandledrejection", (e) => {
+        console.error("[unhandled]", e.reason);
+        showError(
+          `Uncaught error: ${e.reason?.message ?? String(e.reason)}. Check browser console for details.`,
+        );
+      });
+
       generateBtn.addEventListener("click", async () => {
         generateBtn.disabled = true;
         generateBtn.textContent = "Reading PDFs…";
 
-        // 1. Extract text from PDFs (client-side, pdf.js)
+        // 1. Extract text from PDFs (client-side, pdf.js). 60s timeout so
+        //    a worker failure becomes visible instead of a silent hang.
         let pdfText: string;
         try {
-          const ex = await extractPdfs(picked);
+          const extractWithTimeout = Promise.race([
+            extractPdfs(picked),
+            new Promise<never>((_, reject) =>
+              setTimeout(
+                () =>
+                  reject(
+                    new Error(
+                      "PDF extraction timed out after 60s (worker may have failed to load)",
+                    ),
+                  ),
+                60_000,
+              ),
+            ),
+          ]);
+          const ex = await extractWithTimeout;
           pdfText = ex.text;
+          console.log("[gen] extracted", pdfText.length, "chars");
         } catch (e) {
           showError(
             `Couldn't read the PDF: ${(e as Error).message}. If it's encrypted, remove the password and try again.`,
