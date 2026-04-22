@@ -3,12 +3,13 @@ import { systemPrompt, PROMPTS_VERSION } from "ace-study-prompts";
 import type { GenerateEvent } from "~/types/sse-events";
 
 /**
- * Model + cost knobs. Claude Sonnet 4.7 hits the quality bar for student
+ * Model + cost knobs. Claude Sonnet 4.5 hits the quality bar for student
  * review content at roughly a fifth of Opus's cost — the right trade for
- * a $100/mo budget ceiling. Upgrade to opus-4-7 via env override if a
- * specific cohort demands it.
+ * a $100/mo budget ceiling. Override via ANTHROPIC_MODEL env var to use
+ * Opus (claude-opus-4-7) for specific cohorts that need higher quality,
+ * or Haiku (claude-haiku-4-5) to stretch the budget further.
  */
-const MODEL = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-7";
+const MODEL = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-5";
 const MAX_OUTPUT_TOKENS = 16000;
 
 /**
