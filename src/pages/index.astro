@@ -821,7 +821,7 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
             /network|failed to fetch|load failed/i.test(err.message)
           ) {
             showError(
-              "The generation took longer than the 5-minute budget and was cut off. Try again with fewer PDFs, or trim the focus areas — shorter input usually finishes in time.",
+              "The generation took longer than the 13-minute budget and was cut off. That's unusual — try fewer PDFs, trim the focus areas, or switch the model to Haiku (it's ~3× faster). If this keeps happening, share the Vercel function log.",
             );
           } else {
             showError(`Stream disconnected: ${err.message}`);

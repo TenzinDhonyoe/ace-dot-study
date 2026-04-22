@@ -4,38 +4,43 @@ import { jsonrepair } from "jsonrepair";
 import type { GenerateEvent } from "~/types/sse-events";
 
 /**
- * Model + cost knobs. Claude Sonnet 4.5 hits the quality bar for student
- * review content at roughly a fifth of Opus's cost — the right trade for
- * a $100/mo budget ceiling. Override via ANTHROPIC_MODEL env var to use
- * Opus (claude-opus-4-7) for specific cohorts that need higher quality,
- * or Haiku (claude-haiku-4-5) to stretch the budget further.
+ * Model + cost knobs. Claude Haiku 4.5 is the default:
+ *   - ~150-200 tok/s streaming (2-3× Sonnet)
+ *   - $1/Mtok output vs Sonnet's $15/Mtok (15× cheaper)
+ *   - Plenty good for the wedge: extract concepts from lecture PDFs,
+ *     generate flashcards + MCQs + concept-cards.
+ *
+ * Haiku occasionally wobbles on subtle slider-sandbox compute functions;
+ * if a specific cohort needs Sonnet-level quality, flip via env var:
+ *   ANTHROPIC_MODEL=claude-sonnet-4-5   (better reasoning, 15× cost)
+ *   ANTHROPIC_MODEL=claude-opus-4-7     (best reasoning, 5× Sonnet)
  */
-const MODEL = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-5";
+const MODEL = process.env.ANTHROPIC_MODEL ?? "claude-haiku-4-5";
 
 /**
- * Max tokens the model can emit. This number is governed by Vercel's
- * 300-second maxDuration on serverless functions, NOT by the model's
- * own output cap (Sonnet supports up to 64k).
+ * Max tokens the model can emit. Governed by Vercel's maxDuration
+ * (currently 800s on Pro Fluid Compute), NOT the model's own cap.
  *
- * Napkin math at ~70 tokens/sec on Sonnet 4.5:
- *   - 16k tokens → ~230s → safe
- *   - 24k tokens → ~340s → just over the cliff
- *   - 32k tokens → ~460s → blown
+ * Napkin math at ~170 tokens/sec on Haiku 4.5:
+ *   - 40k tokens → ~235s → comfortable
+ *   - 64k tokens → ~375s → fine
+ *   - 100k tokens → ~590s → budget permitting
  *
- * 20k is the sweet spot: room for a real 5-8 section site config without
- * routinely blowing past the 300s wall. The WATCHDOG_MS below is the
- * hard safety: if we approach the timeout, we bail early and jsonrepair
- * whatever we have. 48k caused "network error" mid-stream from Vercel
- * killing the function.
+ * 64k covers a meaty 8-10 section course (30+ widgets) without routinely
+ * hitting the ceiling. The watchdog below catches anything longer and
+ * gracefully bails with jsonrepair on what we have.
+ *
+ * If you switch ANTHROPIC_MODEL back to Sonnet, halve this (Sonnet is
+ * 2-3× slower, so equivalent wall time = fewer tokens).
  */
-const MAX_OUTPUT_TOKENS = 20000;
+const MAX_OUTPUT_TOKENS = 64000;
 
 /**
- * Server-side watchdog. If the stream has been running this long, stop
- * reading and fall through to jsonrepair on whatever we have. Leaves ~30s
- * of budget for render + Blob write before Vercel's 300s maxDuration.
+ * Server-side watchdog. If the stream has been running this long, abort
+ * and fall through to jsonrepair. Leaves ~60s of budget for render +
+ * Blob write before Vercel's 800s maxDuration.
  */
-const WATCHDOG_MS = 260_000;
+const WATCHDOG_MS = 740_000;
 
 /**
  * Estimated cost per generation in USD cents. Used by the spend-cap gate
@@ -329,10 +334,10 @@ function buildUserScaffold(input: GenerateInput): string {
   return [
     "Compose an Ace study site for this lecture material.",
     "",
-    "Be concise. Target 4–6 sections total, ≤ 6 widgets per section, ≤ 20",
-    "flashcards per deck, ≤ 6 MCQs per quiz. Fewer widgets used well beats",
-    "many widgets at half quality. The output has a hard cap around 20k",
-    "tokens — pack the essentials in.",
+    "Aim for 5–8 sections covering the major topic areas. 4–8 widgets per",
+    "section, one flashcard deck of 15–30 cards, one MCQ of 5–8 questions",
+    "per section, plus a cumulative MCQ of 15–25 at the end if it earns its",
+    "place. Fewer widgets used well beats many widgets at half quality.",
     "",
     metaLines.length ? `User-provided context:\n${metaLines.join("\n")}` : "",
     focus
