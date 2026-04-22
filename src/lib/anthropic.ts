@@ -20,6 +20,8 @@ const MAX_OUTPUT_TOKENS = 16000;
  */
 export const ESTIMATED_COST_CENTS = 20;
 
+export type ExamFormat = "mcq-heavy" | "problem-sets" | "mixed" | "essay";
+
 export interface GenerateInput {
   /** Extracted text chunks from user PDFs, already concatenated with
    *  per-lecture headers (e.g. `=== Lecture 3 ===\n<text>`). Client-side
@@ -28,6 +30,8 @@ export interface GenerateInput {
   meta?: {
     course?: string;
     examDate?: string;
+    examFormat?: ExamFormat;
+    focusAreas?: string;
     institution?: string;
   };
   /** BYOK key override. When set, bypasses the house rate-limit + spend
@@ -228,21 +232,38 @@ function stripPlanTags(s: string): string {
 
 /** Build the user turn. Keeps the PDF text contained in <source_material>
  *  tags so the model can distinguish it from instructions (basic prompt-
- *  injection hardening — the system prompt has the authoritative rules). */
+ *  injection hardening — the system prompt has the authoritative rules).
+ *
+ *  Form metadata from the landing page arrives here as `input.meta`. We
+ *  lift these into explicit, high-visibility instructions at the top of
+ *  the user turn so the model doesn't bury them. `examFormat` in
+ *  particular changes the widget mix significantly:
+ *    - mcq-heavy    → more mcq-quiz widgets, one per section + cumulative
+ *    - problem-sets → more slider-sandboxes (quantitative)
+ *    - essay        → more concept-cards + flashcards (retrieval)
+ *    - mixed        → balanced recipe from the system prompt
+ */
 function buildUserScaffold(input: GenerateInput): string {
   const meta = input.meta ?? {};
-  const metaLines = [
-    meta.course && `Course code: ${meta.course}`,
-    meta.examDate && `Exam date: ${meta.examDate}`,
-    meta.institution && `Institution: ${meta.institution}`,
-  ]
-    .filter(Boolean)
-    .join("\n");
+  const metaLines: string[] = [];
+  if (meta.course) metaLines.push(`Course: ${meta.course}`);
+  if (meta.examDate) metaLines.push(`Exam date: ${meta.examDate}`);
+  if (meta.institution) metaLines.push(`Institution: ${meta.institution}`);
+  if (meta.examFormat) {
+    metaLines.push(`Exam format: ${formatHint(meta.examFormat)}`);
+  }
+
+  const focus = (meta.focusAreas ?? "").trim();
 
   return [
     "Compose an Ace study site for this lecture material.",
-    metaLines ? `\n${metaLines}` : "",
-    "\nBegin with a `<plan>...</plan>` block. Write one sentence per lecture",
+    "",
+    metaLines.length ? `User-provided context:\n${metaLines.join("\n")}` : "",
+    focus
+      ? `\nUser focus areas (prioritize these, de-emphasize the rest):\n${focus}`
+      : "",
+    "",
+    "Begin with a `<plan>...</plan>` block. Write one sentence per lecture",
     "describing what you're reading, then one sentence per section you're",
     "about to compose. Keep each sentence short — the student reads this live.",
     "",
@@ -252,7 +273,22 @@ function buildUserScaffold(input: GenerateInput): string {
     "<source_material>",
     input.pdfText,
     "</source_material>",
-  ].join("\n");
+  ]
+    .filter((l) => l !== "")
+    .join("\n");
+}
+
+function formatHint(format: ExamFormat): string {
+  switch (format) {
+    case "mcq-heavy":
+      return "MCQ-heavy — lean heavily on mcq-quiz widgets (one per section + a cumulative one at the end). Every distractor a plausible misconception.";
+    case "problem-sets":
+      return "Problem sets — lean heavily on slider-sandbox widgets for every quantitative equation. The user practices by tweaking variables.";
+    case "essay":
+      return "Essay — lean on concept-cards and flashcard decks for retrieval practice of key terms and arguments. Fewer slider-sandboxes.";
+    case "mixed":
+      return "Mixed — use the balanced per-section recipe (concept-card + sliders + flashcards + MCQ).";
+  }
 }
 
 /** Yield whole sentences from a buffer so narration feels typed, not

@@ -18,6 +18,12 @@
   --sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
     "Helvetica Neue", sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Vertical rhythm — single unit all sections stack on. Use multiples:
+     - 0.5 * rhythm for label-to-input
+     - 1   * rhythm for field-to-field or section-to-section
+     - 2   * rhythm for group-to-group separators */
+  --rhythm: clamp(20px, 4vw, 28px);
 }
 
 @media (prefers-color-scheme: dark) {

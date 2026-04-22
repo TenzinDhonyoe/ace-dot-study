@@ -84,7 +84,13 @@ async function runPipeline(
       // --- 1. Parse request ---
       let body: {
         pdfText?: string;
-        meta?: { course?: string; examDate?: string; institution?: string };
+        meta?: {
+          course?: string;
+          examDate?: string;
+          examFormat?: "mcq-heavy" | "problem-sets" | "mixed" | "essay";
+          focusAreas?: string;
+          institution?: string;
+        };
         turnstileToken?: string;
       };
       try {
@@ -100,6 +106,16 @@ async function runPipeline(
           "invalid_pdf",
           "Lecture text too long (>500k chars). Split across multiple generations.",
         );
+      }
+
+      // Server-side clamp on user-controlled meta fields. Defense in depth
+      // even though the client also caps these. focusAreas feeds directly
+      // into the model prompt so it's the most sensitive surface.
+      if (body.meta?.focusAreas && body.meta.focusAreas.length > 500) {
+        body.meta.focusAreas = body.meta.focusAreas.slice(0, 500);
+      }
+      if (body.meta?.course && body.meta.course.length > 120) {
+        body.meta.course = body.meta.course.slice(0, 120);
       }
 
       const byokKey = request.headers.get("X-Anthropic-Key") || undefined;

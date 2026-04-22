@@ -39,8 +39,8 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
       .wrap {
         max-width: 56ch;
         margin: 0 auto;
-        padding: clamp(24px, 6vw, 56px) clamp(16px, 5vw, 24px)
-          clamp(48px, 8vw, 120px);
+        padding: calc(var(--rhythm) * 1.5) clamp(16px, 5vw, 24px)
+          calc(var(--rhythm) * 4);
       }
       .wordmark {
         font-family: var(--sans);
@@ -48,12 +48,12 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
         font-size: 15px;
         letter-spacing: -0.01em;
         color: var(--ink);
-        margin: 0 0 clamp(32px, 8vw, 56px);
+        margin: 0 0 calc(var(--rhythm) * 2);
       }
       .lede {
         font-size: clamp(18px, 1vw + 14px, 22px);
         line-height: 1.45;
-        margin: 0 0 clamp(24px, 5vw, 32px);
+        margin: 0 0 var(--rhythm);
       }
       .drop {
         border: 1.5px dashed var(--rule);
@@ -84,7 +84,7 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
         cursor: default;
       }
       .filelist {
-        margin: 14px 0 0;
+        margin: calc(var(--rhythm) / 2) 0 0;
         padding: 0;
         list-style: none;
         font-family: var(--sans);
@@ -94,10 +94,112 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
       .filelist li {
         padding: 2px 0;
       }
+
+      /* --- Meta-context form --- */
+      .form {
+        margin-top: var(--rhythm);
+        display: none;
+      }
+      .form.visible {
+        display: block;
+      }
+      .field {
+        margin: 0 0 var(--rhythm);
+      }
+      .field label {
+        display: block;
+        font-family: var(--sans);
+        font-size: 13px;
+        color: var(--muted);
+        margin: 0 0 calc(var(--rhythm) / 2);
+        letter-spacing: 0.01em;
+      }
+      .field input[type="text"],
+      .field input[type="date"],
+      .field input[type="password"],
+      .field textarea {
+        width: 100%;
+        background: transparent;
+        color: var(--ink);
+        font-family: var(--serif);
+        font-size: 16px;
+        line-height: 1.5;
+        border: none;
+        border-bottom: 1px solid var(--rule);
+        border-radius: 0;
+        padding: 4px 0 6px;
+        outline: none;
+        transition: border-color 0.15s ease;
+      }
+      .field input:focus,
+      .field textarea:focus {
+        border-bottom-color: var(--accent);
+      }
+      .field textarea {
+        resize: vertical;
+        min-height: calc(var(--rhythm) * 3);
+      }
+      .pills {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      .pill {
+        font-family: var(--sans);
+        font-size: 13.5px;
+        color: var(--muted);
+        background: transparent;
+        border: 1px solid var(--rule);
+        border-radius: 999px;
+        padding: 6px 14px;
+        cursor: pointer;
+        transition:
+          border-color 0.15s ease,
+          color 0.15s ease,
+          background 0.15s ease;
+      }
+      .pill:hover {
+        color: var(--ink);
+        border-color: var(--ink);
+      }
+      .pill.is-selected {
+        color: var(--accent);
+        background: var(--accent-soft);
+        border-color: var(--accent);
+      }
+      .more-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: transparent;
+        border: none;
+        padding: 0;
+        font-family: var(--sans);
+        font-size: 13.5px;
+        color: var(--muted);
+        cursor: pointer;
+        margin: 0 0 var(--rhythm);
+      }
+      .more-toggle:hover {
+        color: var(--accent);
+      }
+      .more-toggle .chev {
+        transition: transform 0.15s ease;
+      }
+      .more-toggle[aria-expanded="true"] .chev {
+        transform: rotate(90deg);
+      }
+      .more {
+        display: none;
+      }
+      .more.is-open {
+        display: block;
+      }
+
       .generate {
         display: block;
         width: 100%;
-        margin-top: 16px;
+        margin-top: var(--rhythm);
         font-family: var(--sans);
         font-size: 15px;
         font-weight: 600;
@@ -116,13 +218,13 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
         cursor: default;
       }
       .example {
-        margin: clamp(20px, 4vw, 28px) 0 0;
+        margin: calc(var(--rhythm) * 2) 0 0;
         font-family: var(--sans);
         font-size: 13.5px;
         color: var(--muted);
       }
       .foot {
-        margin: clamp(56px, 10vw, 96px) 0 0;
+        margin: calc(var(--rhythm) * 3) 0 0;
         font-family: var(--sans);
         font-size: 12.5px;
         color: var(--muted);
@@ -261,6 +363,71 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
           multiple
           hidden
         />
+
+        <div class="form" id="metaForm">
+          <div class="field">
+            <label for="fCourse">Course</label>
+            <input
+              type="text"
+              id="fCourse"
+              name="course"
+              placeholder="e.g. BME 804 Biomedical Instrumentation"
+              autocomplete="off"
+              maxlength="120"
+            />
+          </div>
+
+          <div class="field">
+            <label for="fExamDate">Exam date</label>
+            <input type="date" id="fExamDate" name="examDate" />
+          </div>
+
+          <div class="field">
+            <label>Exam format</label>
+            <div class="pills" role="radiogroup" aria-label="Exam format" id="formatPills">
+              <button type="button" class="pill" data-value="mcq-heavy" role="radio" aria-checked="false">MCQ-heavy</button>
+              <button type="button" class="pill" data-value="problem-sets" role="radio" aria-checked="false">Problem sets</button>
+              <button type="button" class="pill is-selected" data-value="mixed" role="radio" aria-checked="true">Mixed</button>
+              <button type="button" class="pill" data-value="essay" role="radio" aria-checked="false">Essay</button>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            class="more-toggle"
+            id="moreToggle"
+            aria-expanded="false"
+            aria-controls="moreFields"
+          >
+            <span class="chev" aria-hidden="true">›</span>
+            <span>More context</span>
+          </button>
+
+          <div class="more" id="moreFields">
+            <div class="field">
+              <label for="fFocus">Focus areas</label>
+              <textarea
+                id="fFocus"
+                name="focusAreas"
+                placeholder="Anything specific worth prioritizing? e.g. 'Microactuators and biosensors; skip the intro lectures.'"
+                rows="3"
+                maxlength="500"
+              ></textarea>
+            </div>
+
+            <div class="field">
+              <label for="fKey">Anthropic API key <span style="opacity:0.7">(optional — skips rate limit)</span></label>
+              <input
+                type="password"
+                id="fKey"
+                name="anthropicKey"
+                placeholder="sk-ant-..."
+                autocomplete="off"
+                spellcheck="false"
+              />
+            </div>
+          </div>
+        </div>
 
         {turnstileEnabled && (
           <div
@@ -406,9 +573,41 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
         fileList.innerHTML = files
           .map((f) => `<li>${escapeHtml(f.name)} (${kb(f.size)} KB)</li>`)
           .join("");
+        // Reveal the meta-context form + Generate button together so the
+        // user sees the full next-steps surface once they've committed
+        // to a file set.
+        document.getElementById("metaForm")!.classList.add("visible");
         generateBtn.classList.remove("hidden");
         generateBtn.disabled = false;
       }
+
+      // Radio-pill behavior for Exam format
+      const formatPills = document.getElementById("formatPills")!;
+      let examFormat: string = "mixed";
+      formatPills.addEventListener("click", (e) => {
+        const btn = (e.target as HTMLElement).closest<HTMLButtonElement>(
+          ".pill",
+        );
+        if (!btn) return;
+        examFormat = btn.dataset.value ?? "mixed";
+        formatPills.querySelectorAll<HTMLButtonElement>(".pill").forEach(
+          (b) => {
+            const on = b === btn;
+            b.classList.toggle("is-selected", on);
+            b.setAttribute("aria-checked", String(on));
+          },
+        );
+      });
+
+      // "More context" expando
+      const moreToggle = document.getElementById(
+        "moreToggle",
+      ) as HTMLButtonElement;
+      const moreFields = document.getElementById("moreFields") as HTMLDivElement;
+      moreToggle.addEventListener("click", () => {
+        const open = moreFields.classList.toggle("is-open");
+        moreToggle.setAttribute("aria-expanded", String(open));
+      });
 
       window.addEventListener("unhandledrejection", (e) => {
         console.error("[unhandled]", e.reason);
@@ -460,15 +659,35 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
         uploadView.classList.add("hidden");
         genView.classList.remove("hidden");
 
-        // 4. POST and stream
+        // 4. Collect form values + POST
+        const course = (
+          document.getElementById("fCourse") as HTMLInputElement
+        ).value.trim();
+        const examDate = (
+          document.getElementById("fExamDate") as HTMLInputElement
+        ).value.trim();
+        const focusAreas = (
+          document.getElementById("fFocus") as HTMLTextAreaElement
+        ).value.trim().slice(0, 500);
+        const apiKey = (
+          document.getElementById("fKey") as HTMLInputElement
+        ).value.trim();
+
+        const meta: Record<string, string> = {};
+        if (course) meta.course = course;
+        if (examDate) meta.examDate = examDate;
+        if (examFormat) meta.examFormat = examFormat;
+        if (focusAreas) meta.focusAreas = focusAreas;
+
+        const headers: Record<string, string> = {
+          "Content-Type": "application/json",
+        };
+        if (apiKey) headers["X-Anthropic-Key"] = apiKey;
+
         const res = await fetch("/api/generate", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            pdfText,
-            meta: {},
-            turnstileToken,
-          }),
+          headers,
+          body: JSON.stringify({ pdfText, meta, turnstileToken }),
         });
 
         let slug: string | null = null;
