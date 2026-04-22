@@ -22,9 +22,8 @@
     "@upstash/ratelimit": "^2.0.5",
     "@upstash/redis": "^1.34.3",
     "@vercel/blob": "^0.27.0",
-    "ace-study-components": "link:ace-study-components",
-    "ace-study-prompts": "link:ace-study-prompts",
-    "ace-study-template": "link:ace-study-template",
+    "ace-study-prompts": "^0.1.0",
+    "ace-study-template": "^0.3.1",
     "astro": "^5.0.0",
     "nanoid": "^5.0.9",
     "pdfjs-dist": "^5.6.205"
