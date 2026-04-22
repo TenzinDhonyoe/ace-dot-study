@@ -37,9 +37,9 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
     )}
     <style>
       .wrap {
-        max-width: 56ch;
+        max-width: min(94vw, 880px);
         margin: 0 auto;
-        padding: calc(var(--rhythm) * 1.5) clamp(16px, 5vw, 24px)
+        padding: calc(var(--rhythm) * 1.5) clamp(18px, 5vw, 48px)
           calc(var(--rhythm) * 4);
       }
       .wordmark {
@@ -51,9 +51,11 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
         margin: 0 0 calc(var(--rhythm) * 2);
       }
       .lede {
-        font-size: clamp(18px, 1vw + 14px, 22px);
-        line-height: 1.45;
+        font-size: clamp(20px, 1vw + 15px, 26px);
+        line-height: 1.4;
+        letter-spacing: -0.005em;
         margin: 0 0 var(--rhythm);
+        max-width: 34ch; /* keep paragraph readable even in wider container */
       }
       .drop {
         border: 1.5px dashed var(--rule);
@@ -230,47 +232,92 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
         color: var(--muted);
       }
 
-      /* Generating view */
-      .gen-head {
-        font-family: var(--sans);
-        font-size: 14px;
-        color: var(--muted);
-        margin: 0 0 20px;
+      /* Generation focus overlay (Lovable-style).
+         Fixed, full-viewport, blurs the landing underneath. Shows just the
+         URL + progress bar + one sentence of what the model is doing now.
+         No narration stream dump — one sentence at a time, replaces smoothly. */
+      .overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: clamp(16px, 4vw, 32px);
+        background: color-mix(in oklab, var(--paper) 55%, transparent);
+        backdrop-filter: blur(18px) saturate(140%);
+        -webkit-backdrop-filter: blur(18px) saturate(140%);
+        animation: overlay-in 0.3s ease;
       }
-      .gen-url {
+      .overlay.visible {
+        display: flex;
+      }
+      @keyframes overlay-in {
+        from {
+          opacity: 0;
+          backdrop-filter: blur(0);
+        }
+        to {
+          opacity: 1;
+        }
+      }
+      .card {
+        width: min(100%, 520px);
+        background: var(--paper);
+        border: 1px solid var(--rule);
+        border-radius: 14px;
+        padding: clamp(24px, 4vw, 36px);
+        box-shadow: 0 30px 80px rgba(0, 0, 0, 0.18);
+        font-family: var(--sans);
+      }
+      .card__url {
+        font-size: 12.5px;
+        color: var(--muted);
+        margin: 0 0 6px;
+        letter-spacing: 0.02em;
+      }
+      .card__url-val {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0 0 calc(var(--rhythm) * 1.2);
+      }
+      .card__url-val .url {
         font-family: var(--mono);
-        font-size: 15px;
+        font-size: 14px;
         color: var(--ink);
         background: var(--accent-soft);
-        padding: 2px 6px;
-        border-radius: 4px;
+        padding: 3px 8px;
+        border-radius: 5px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        flex: 1;
+        min-width: 0;
       }
-      .divider {
-        font-family: var(--sans);
-        font-size: 12px;
+      .card__url-val .copy {
+        background: transparent;
+        border: 1px solid var(--rule);
+        border-radius: 6px;
+        width: 34px;
+        height: 34px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
         color: var(--muted);
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-        margin: 32px 0 6px;
-        border-top: 1px solid var(--rule);
-        padding-top: 16px;
-        display: flex;
-        justify-content: space-between;
-        align-items: baseline;
-        gap: 12px;
+        flex-shrink: 0;
       }
-      .divider .pct {
-        letter-spacing: 0;
-        text-transform: none;
-        color: var(--muted);
-        font-variant-numeric: tabular-nums;
+      .card__url-val .copy:hover {
+        color: var(--ink);
+        border-color: var(--ink);
       }
       .bar {
-        height: 3px;
+        height: 4px;
         background: var(--rule);
         border-radius: 2px;
         overflow: hidden;
-        margin: 0 0 20px;
+        margin: 0 0 10px;
       }
       .bar__fill {
         height: 100%;
@@ -298,28 +345,48 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
           transform: translateX(333%);
         }
       }
-      .stream {
+      .card__stage {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 12px;
+        font-size: 12px;
+        color: var(--muted);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        margin: 0 0 calc(var(--rhythm) * 0.8);
+      }
+      .card__stage .pct {
+        letter-spacing: 0;
+        text-transform: none;
+        font-variant-numeric: tabular-nums;
+      }
+      .card__sentence {
         font-family: var(--serif);
-        font-size: 15.5px;
-        line-height: 1.7;
-        min-height: 200px;
-        white-space: pre-wrap;
+        font-size: 17px;
+        line-height: 1.45;
+        color: var(--ink);
+        min-height: 3em; /* reserve 2 lines so bar doesn't jump */
+        margin: 0 0 calc(var(--rhythm) * 1.2);
+        transition: opacity 0.25s ease;
       }
-      .cursor {
-        display: inline-block;
-        width: 0.6ch;
-        background: var(--ink);
-        animation: blink 1s steps(2, start) infinite;
-        vertical-align: -2px;
+      .card__sentence.is-changing {
+        opacity: 0.3;
       }
-      .cursor::before {
-        content: "\00a0";
+      .card__cancel {
+        background: transparent;
+        border: none;
+        padding: 0;
+        font-family: var(--sans);
+        font-size: 13.5px;
+        color: var(--muted);
+        cursor: pointer;
       }
-      @keyframes blink {
-        50% {
-          opacity: 0;
-        }
+      .card__cancel:hover {
+        color: var(--warn);
+        text-decoration: underline;
       }
+
       .error {
         font-family: var(--sans);
         font-size: 14px;
@@ -328,7 +395,7 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
         border: 1px solid var(--warn);
         border-radius: 6px;
         padding: 12px 14px;
-        margin-top: 16px;
+        margin-top: var(--rhythm);
       }
       .hidden {
         display: none !important;
@@ -458,20 +525,30 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
         </p>
       </section>
 
-      <!-- Generating view -->
-      <section id="genView" class="hidden">
-        <p class="gen-head">
-          Your site will live at:
-          <span class="gen-url" id="genUrl">ace.study/—</span>
-          <button id="copyBtn" aria-label="Copy URL" style="margin-left:4px"
-            >⧉</button
-          >
-        </p>
+    </main>
 
-        <p class="divider">
-          <span id="stageLabel">Preparing…</span>
-          <span class="pct" id="stagePct"></span>
-        </p>
+    <!-- Generation focus overlay. Appears on top of the landing with a
+         blurred backdrop; shows URL, progress bar, a single rolling
+         sentence, and cancel. No narration stream dump. -->
+    <div
+      class="overlay"
+      id="overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="cardStage"
+    >
+      <div class="card">
+        <p class="card__url">Your site will live at</p>
+        <div class="card__url-val">
+          <span class="url" id="genUrl">ace.study/—</span>
+          <button
+            class="copy"
+            id="copyBtn"
+            type="button"
+            aria-label="Copy URL"
+          >⧉</button>
+        </div>
+
         <div class="bar">
           <div
             class="bar__fill is-indeterminate"
@@ -484,13 +561,22 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
           </div>
         </div>
 
-        <div class="stream" id="stream" aria-live="polite">
-          <span class="cursor" aria-hidden="true"></span>
+        <div class="card__stage">
+          <span id="stageLabel">Preparing…</span>
+          <span class="pct" id="stagePct"></span>
         </div>
 
+        <p class="card__sentence" id="cardSentence" aria-live="polite">
+          Reading lecture material.
+        </p>
+
+        <button type="button" class="card__cancel" id="cancelBtn">
+          Cancel
+        </button>
+
         <div id="errorBox" class="error hidden"></div>
-      </section>
-    </main>
+      </div>
+    </div>
 
     <script>
       import { extractPdfs } from "~/lib/pdf-extract";
@@ -509,10 +595,15 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
       const uploadView = document.getElementById(
         "uploadView",
       ) as HTMLElement;
-      const genView = document.getElementById("genView") as HTMLElement;
+      const overlay = document.getElementById("overlay") as HTMLDivElement;
       const genUrl = document.getElementById("genUrl") as HTMLSpanElement;
       const copyBtn = document.getElementById("copyBtn") as HTMLButtonElement;
-      const stream = document.getElementById("stream") as HTMLDivElement;
+      const cancelBtn = document.getElementById(
+        "cancelBtn",
+      ) as HTMLButtonElement;
+      const sentenceEl = document.getElementById(
+        "cardSentence",
+      ) as HTMLParagraphElement;
       const errorBox = document.getElementById("errorBox") as HTMLDivElement;
       const stageLabel = document.getElementById(
         "stageLabel",
@@ -542,6 +633,7 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
       const STAGE_COMPOSING_CEIL = 90;
 
       let picked: File[] = [];
+      let abortCtrl: AbortController | null = null;
 
       uploadBtn.addEventListener("click", () => fileInput.click());
 
@@ -655,9 +747,9 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
           return;
         }
 
-        // 3. Switch to generating view
-        uploadView.classList.add("hidden");
-        genView.classList.remove("hidden");
+        // 3. Show the focus overlay (landing stays visible + blurred behind)
+        overlay.classList.add("visible");
+        sentenceEl.textContent = "Reading lecture material.";
 
         // 4. Collect form values + POST
         const course = (
@@ -684,10 +776,13 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
         };
         if (apiKey) headers["X-Anthropic-Key"] = apiKey;
 
+        // Abort handle so the Cancel button can bail mid-stream
+        abortCtrl = new AbortController();
         const res = await fetch("/api/generate", {
           method: "POST",
           headers,
           body: JSON.stringify({ pdfText, meta, turnstileToken }),
+          signal: abortCtrl.signal,
         });
 
         let slug: string | null = null;
@@ -704,7 +799,7 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
                 handleProgress(event);
                 break;
               case "narration":
-                appendNarration(event.text);
+                showLatestSentence(event.text);
                 break;
               case "complete":
                 if (event.slug) {
@@ -719,7 +814,10 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
             }
           }
         } catch (e) {
-          showError(`Stream disconnected: ${(e as Error).message}`);
+          // User-initiated abort isn't an error worth flagging
+          if ((e as Error).name !== "AbortError") {
+            showError(`Stream disconnected: ${(e as Error).message}`);
+          }
         }
 
         function handleProgress(event: {
@@ -776,16 +874,59 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
         setTimeout(() => (copyBtn.textContent = "⧉"), 1500);
       });
 
-      function appendNarration(text: string) {
-        // Remove the cursor, append text, re-add cursor at the end
-        const cursor = stream.querySelector(".cursor");
-        cursor?.remove();
-        stream.append(document.createTextNode(text));
-        const c = document.createElement("span");
-        c.className = "cursor";
-        c.setAttribute("aria-hidden", "true");
-        stream.append(c);
+      // Accumulates narration chunks into a running buffer and extracts
+      // the LAST complete sentence. Only that sentence is shown on the
+      // card — no scrollback, no stream dump. If the model's last full
+      // sentence hasn't changed, we leave the UI alone (avoids jitter
+      // during token-level streaming).
+      let narrationBuffer = "";
+      let currentSentence = "";
+      function showLatestSentence(chunk: string) {
+        narrationBuffer += chunk;
+        const latest = lastCompleteSentence(narrationBuffer);
+        if (!latest || latest === currentSentence) return;
+        currentSentence = latest;
+        // Smooth swap: dim → replace → restore
+        sentenceEl.classList.add("is-changing");
+        setTimeout(() => {
+          sentenceEl.textContent = latest;
+          sentenceEl.classList.remove("is-changing");
+        }, 120);
       }
+
+      function lastCompleteSentence(buf: string): string {
+        // Walk backwards to the last sentence terminator. We only want
+        // a *complete* sentence; partial fragments at the tail are dropped.
+        const trimmed = buf.trim();
+        if (!trimmed) return "";
+        // Find the last terminator (., !, ?, or newline). The sentence
+        // starts after the second-to-last terminator.
+        const lastTerm = Math.max(
+          trimmed.lastIndexOf("."),
+          trimmed.lastIndexOf("!"),
+          trimmed.lastIndexOf("?"),
+          trimmed.lastIndexOf("\n"),
+        );
+        if (lastTerm === -1) return "";
+        const upTo = trimmed.slice(0, lastTerm + 1);
+        const priorTerm = Math.max(
+          upTo.slice(0, -1).lastIndexOf("."),
+          upTo.slice(0, -1).lastIndexOf("!"),
+          upTo.slice(0, -1).lastIndexOf("?"),
+          upTo.slice(0, -1).lastIndexOf("\n"),
+        );
+        const start = priorTerm === -1 ? 0 : priorTerm + 1;
+        return upTo.slice(start).trim();
+      }
+
+      cancelBtn.addEventListener("click", () => {
+        abortCtrl?.abort();
+        overlay.classList.remove("visible");
+        narrationBuffer = "";
+        currentSentence = "";
+        generateBtn.disabled = false;
+        generateBtn.textContent = "Generate";
+      });
 
       function showError(msg: string) {
         errorBox.textContent = msg;
