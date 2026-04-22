@@ -25,6 +25,7 @@
     "ace-study-prompts": "^0.1.0",
     "ace-study-template": "^0.3.1",
     "astro": "^5.0.0",
+    "jsonrepair": "^3.14.0",
     "nanoid": "^5.0.9",
     "pdfjs-dist": "^5.6.205"
   },

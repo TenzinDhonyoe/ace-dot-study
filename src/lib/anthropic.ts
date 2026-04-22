@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { systemPrompt, PROMPTS_VERSION } from "ace-study-prompts";
+import { jsonrepair } from "jsonrepair";
 import type { GenerateEvent } from "~/types/sse-events";
 
 /**
@@ -10,7 +11,20 @@ import type { GenerateEvent } from "~/types/sse-events";
  * or Haiku (claude-haiku-4-5) to stretch the budget further.
  */
 const MODEL = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-5";
-const MAX_OUTPUT_TOKENS = 16000;
+
+/**
+ * Max tokens the model can emit. A full multi-section site config with
+ * 5-8 slider-sandboxes, 30+ flashcards, and a 20-question cumulative MCQ
+ * runs ~25-40k output tokens. Previous 16k cap routinely truncated
+ * large courses. 48k leaves headroom for long lecture sets while still
+ * staying under most plan budgets.
+ *
+ * If you hit the cap, either:
+ *   - Raise this (Sonnet 4.5 supports up to 64k output)
+ *   - Ask the model to be terser via a system-prompt update
+ *   - Split the generation into per-section calls
+ */
+const MAX_OUTPUT_TOKENS = 48000;
 
 /**
  * Estimated cost per generation in USD cents. Used by the spend-cap gate
@@ -207,17 +221,45 @@ export async function* streamGenerate(
   }
 
   let config: unknown;
+  let repairedFromPartial = false;
+  const raw = jsonBuffer.trim();
   try {
-    config = JSON.parse(jsonBuffer.trim());
-  } catch (e) {
-    console.error("[gen] JSON parse failed. Buffer head:", jsonBuffer.slice(0, 200));
+    config = JSON.parse(raw);
+  } catch (firstErr) {
+    // Most likely cause at this point: MAX_OUTPUT_TOKENS cap fired mid-
+    // emission and the model's last string/array/object is unterminated.
+    // Try jsonrepair — it closes open strings, brackets, braces, drops
+    // trailing commas. The repaired config might lose the last widget
+    // or two but usually saves 80%+ of the generation.
+    console.warn(
+      "[gen] JSON parse failed (" + (firstErr as Error).message + "), attempting repair",
+    );
+    try {
+      const repaired = jsonrepair(raw);
+      config = JSON.parse(repaired);
+      repairedFromPartial = true;
+      console.log("[gen] jsonrepair succeeded — partial config recovered");
+    } catch (repairErr) {
+      console.error(
+        "[gen] JSON parse failed both raw and repaired. Buffer head:",
+        raw.slice(0, 200),
+      );
+      yield {
+        type: "error",
+        code: "internal",
+        message: `Model returned malformed JSON: ${(firstErr as Error).message}. The response may have been truncated — try again with fewer PDFs or simpler focus areas.`,
+        retryable: true,
+      };
+      return;
+    }
+  }
+
+  if (repairedFromPartial) {
     yield {
-      type: "error",
-      code: "internal",
-      message: `Model returned malformed JSON: ${(e as Error).message}`,
-      retryable: true,
+      type: "narration",
+      text:
+        "\n\nNote: the generation was truncated and I recovered a partial site. Some sections near the end may be missing widgets.\n",
     };
-    return;
   }
 
   yield { type: "__config", config };
