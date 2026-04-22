@@ -13,18 +13,29 @@ import type { GenerateEvent } from "~/types/sse-events";
 const MODEL = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-5";
 
 /**
- * Max tokens the model can emit. A full multi-section site config with
- * 5-8 slider-sandboxes, 30+ flashcards, and a 20-question cumulative MCQ
- * runs ~25-40k output tokens. Previous 16k cap routinely truncated
- * large courses. 48k leaves headroom for long lecture sets while still
- * staying under most plan budgets.
+ * Max tokens the model can emit. This number is governed by Vercel's
+ * 300-second maxDuration on serverless functions, NOT by the model's
+ * own output cap (Sonnet supports up to 64k).
  *
- * If you hit the cap, either:
- *   - Raise this (Sonnet 4.5 supports up to 64k output)
- *   - Ask the model to be terser via a system-prompt update
- *   - Split the generation into per-section calls
+ * Napkin math at ~70 tokens/sec on Sonnet 4.5:
+ *   - 16k tokens → ~230s → safe
+ *   - 24k tokens → ~340s → just over the cliff
+ *   - 32k tokens → ~460s → blown
+ *
+ * 20k is the sweet spot: room for a real 5-8 section site config without
+ * routinely blowing past the 300s wall. The WATCHDOG_MS below is the
+ * hard safety: if we approach the timeout, we bail early and jsonrepair
+ * whatever we have. 48k caused "network error" mid-stream from Vercel
+ * killing the function.
  */
-const MAX_OUTPUT_TOKENS = 48000;
+const MAX_OUTPUT_TOKENS = 20000;
+
+/**
+ * Server-side watchdog. If the stream has been running this long, stop
+ * reading and fall through to jsonrepair on whatever we have. Leaves ~30s
+ * of budget for render + Blob write before Vercel's 300s maxDuration.
+ */
+const WATCHDOG_MS = 260_000;
 
 /**
  * Estimated cost per generation in USD cents. Used by the spend-cap gate
@@ -114,8 +125,20 @@ export async function* streamGenerate(
   let narrationEmitted = 0;
   let composingEmitted = false;
   let lastProgressBytes = 0;
+  let watchdogFired = false;
+  const startedAt = Date.now();
 
   for await (const event of stream) {
+    if (Date.now() - startedAt > WATCHDOG_MS) {
+      watchdogFired = true;
+      console.warn(
+        `[gen] watchdog fired at ${Math.round((Date.now() - startedAt) / 1000)}s — bailing before Vercel 300s timeout`,
+      );
+      try {
+        stream.controller.abort();
+      } catch {}
+      break;
+    }
     if (
       event.type !== "content_block_delta" ||
       event.delta.type !== "text_delta"
@@ -254,7 +277,13 @@ export async function* streamGenerate(
     }
   }
 
-  if (repairedFromPartial) {
+  if (watchdogFired) {
+    yield {
+      type: "narration",
+      text:
+        "\n\nHit the time budget before the model finished. Saving what I have — some sections near the end may be missing widgets.\n",
+    };
+  } else if (repairedFromPartial) {
     yield {
       type: "narration",
       text:
@@ -299,6 +328,11 @@ function buildUserScaffold(input: GenerateInput): string {
 
   return [
     "Compose an Ace study site for this lecture material.",
+    "",
+    "Be concise. Target 4–6 sections total, ≤ 6 widgets per section, ≤ 20",
+    "flashcards per deck, ≤ 6 MCQs per quiz. Fewer widgets used well beats",
+    "many widgets at half quality. The output has a hard cap around 20k",
+    "tokens — pack the essentials in.",
     "",
     metaLines.length ? `User-provided context:\n${metaLines.join("\n")}` : "",
     focus

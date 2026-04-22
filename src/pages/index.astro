@@ -814,9 +814,17 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
             }
           }
         } catch (e) {
-          // User-initiated abort isn't an error worth flagging
-          if ((e as Error).name !== "AbortError") {
-            showError(`Stream disconnected: ${(e as Error).message}`);
+          const err = e as Error;
+          if (err.name === "AbortError") {
+            // User clicked Cancel — not an error worth flagging.
+          } else if (
+            /network|failed to fetch|load failed/i.test(err.message)
+          ) {
+            showError(
+              "The generation took longer than the 5-minute budget and was cut off. Try again with fewer PDFs, or trim the focus areas — shorter input usually finishes in time.",
+            );
+          } else {
+            showError(`Stream disconnected: ${err.message}`);
           }
         }
 
