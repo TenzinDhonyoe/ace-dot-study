@@ -142,6 +142,13 @@ async function runPipeline(
       const slug = newSlug();
       emit({ type: "slug", slug });
 
+      // Immediate heartbeat so the UI never looks dead while the model
+      // works up its first tokens (TTFT on a cold cache is 5-15s).
+      emit({
+        type: "narration",
+        text: `Reading ${Math.round(body.pdfText.length / 1000)}k characters of lecture material…\n\n`,
+      });
+
       // --- 6. Stream Anthropic ---
       const apiKey = byokKey ?? process.env.ANTHROPIC_API_KEY;
       if (!apiKey) {

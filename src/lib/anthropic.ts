@@ -73,10 +73,9 @@ export async function* streamGenerate(
 
   const userScaffold = buildUserScaffold(input);
 
-  let buffer = "";
-  let inPlan = false;
-  let inJson = false;
-  let jsonBuffer = "";
+  console.log(
+    "[gen] starting stream, model=" + MODEL + ", pdfText=" + input.pdfText.length + " chars",
+  );
 
   const stream = await client.messages.stream({
     model: MODEL,
@@ -84,6 +83,17 @@ export async function* streamGenerate(
     system: cachedSystem,
     messages: [{ role: "user", content: userScaffold }],
   });
+
+  // Parser state: we pass through EVERYTHING as narration (stripping
+  // `<plan>` and `</plan>` tags), until we see a ```json fence. After
+  // that, accumulate into jsonBuffer until the closing fence. This is
+  // forgiving: if the model skips the tags, or adds preamble, or puts
+  // narration after the JSON, the user still sees useful text.
+  let buffer = "";
+  let inJson = false;
+  let jsonBuffer = "";
+  let totalDeltaBytes = 0;
+  let narrationEmitted = 0;
 
   for await (const event of stream) {
     if (
@@ -93,56 +103,33 @@ export async function* streamGenerate(
       continue;
     }
     const delta = event.delta.text;
+    totalDeltaBytes += delta.length;
     buffer += delta;
-
-    // State machine: look for <plan>...</plan> narration, then a JSON
-    // fence. We don't bother with a full parser — the tags are
-    // unambiguous inside a system-prompted generation.
-
-    if (!inPlan && !inJson) {
-      const openPlan = buffer.indexOf("<plan>");
-      if (openPlan !== -1) {
-        inPlan = true;
-        buffer = buffer.slice(openPlan + "<plan>".length);
-        continue;
-      }
-      // Could also open straight into ```json without a plan preamble
-      const openFence = buffer.indexOf("```json");
-      if (openFence !== -1) {
-        inJson = true;
-        buffer = buffer.slice(openFence + "```json".length);
-        continue;
-      }
-    }
-
-    if (inPlan) {
-      const closePlan = buffer.indexOf("</plan>");
-      if (closePlan !== -1) {
-        // Flush remaining plan text, then switch out of plan mode
-        const tail = buffer.slice(0, closePlan);
-        if (tail.trim())
-          yield { type: "narration", text: tail };
-        buffer = buffer.slice(closePlan + "</plan>".length);
-        inPlan = false;
-        continue;
-      }
-      // Emit whole sentences to keep the stream paced naturally
-      const flush = flushSentences(buffer);
-      if (flush.emit) {
-        yield { type: "narration", text: flush.emit };
-        buffer = flush.rest;
-      }
-      continue;
-    }
 
     if (!inJson) {
       const openFence = buffer.indexOf("```json");
       if (openFence !== -1) {
-        inJson = true;
+        // Flush whatever text is before the fence (narration), then switch
+        const preText = stripPlanTags(buffer.slice(0, openFence));
+        if (preText.trim()) {
+          yield { type: "narration", text: preText };
+          narrationEmitted += preText.length;
+        }
         buffer = buffer.slice(openFence + "```json".length);
+        inJson = true;
         continue;
       }
-      // Between </plan> and ```json — drop whitespace, keep scanning
+      // Still in narration. Emit sentence-batches to keep the stream
+      // feeling typed rather than token-chunked.
+      const flush = flushSentences(buffer);
+      if (flush.emit) {
+        const stripped = stripPlanTags(flush.emit);
+        if (stripped.trim()) {
+          yield { type: "narration", text: stripped };
+          narrationEmitted += stripped.length;
+        }
+        buffer = flush.rest;
+      }
       continue;
     }
 
@@ -152,17 +139,32 @@ export async function* streamGenerate(
       jsonBuffer += buffer.slice(0, closeFence);
       buffer = buffer.slice(closeFence + "```".length);
       inJson = false;
+      // Anything after the fence is narration again (usually empty)
     } else {
       jsonBuffer += buffer;
       buffer = "";
     }
   }
 
-  // Stream ended. If we were mid-JSON without a closing fence, the model
-  // probably ran out of tokens. Try to parse what we have.
+  // Stream ended. Flush any trailing narration outside a JSON block.
+  if (!inJson && buffer.trim()) {
+    const stripped = stripPlanTags(buffer);
+    if (stripped.trim()) {
+      yield { type: "narration", text: stripped };
+      narrationEmitted += stripped.length;
+    }
+  }
+
+  // If we were mid-JSON without a closing fence, treat the tail as JSON.
   if (inJson && !jsonBuffer) {
     jsonBuffer = buffer;
+  } else if (inJson) {
+    jsonBuffer += buffer;
   }
+
+  console.log(
+    `[gen] stream ended. total deltas: ${totalDeltaBytes}B, narration emitted: ${narrationEmitted}B, json: ${jsonBuffer.length}B`,
+  );
 
   if (!jsonBuffer.trim()) {
     yield {
@@ -179,6 +181,7 @@ export async function* streamGenerate(
   try {
     config = JSON.parse(jsonBuffer.trim());
   } catch (e) {
+    console.error("[gen] JSON parse failed. Buffer head:", jsonBuffer.slice(0, 200));
     yield {
       type: "error",
       code: "internal",
@@ -189,6 +192,13 @@ export async function* streamGenerate(
   }
 
   yield { type: "__config", config };
+}
+
+/** Strip `<plan>` and `</plan>` tag markers from a narration chunk. We
+ *  don't strictly require the model to use them, but when it does, we
+ *  don't want the literal tags appearing in the UI. */
+function stripPlanTags(s: string): string {
+  return s.replace(/<\/?plan>/g, "");
 }
 
 /** Build the user turn. Keeps the PDF text contained in <source_material>
