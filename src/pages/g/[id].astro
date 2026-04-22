@@ -1,0 +1,117 @@
+---
+// Generation stream page. Shows the slug URL up-front, renders narration
+// events as they arrive. See the ASCII layout in docs/phase2-hosted-plan.md.
+import "~/styles/tokens.css";
+
+const { id } = Astro.params;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Generating… — ace.study</title>
+    <meta name="robots" content="noindex, nofollow" />
+    <style>
+      .wrap {
+        max-width: 60ch;
+        margin: 0 auto;
+        padding: clamp(24px, 6vw, 56px) clamp(16px, 5vw, 24px);
+      }
+      .wordmark {
+        font-family: var(--sans);
+        font-weight: 600;
+        font-size: 15px;
+        margin: 0 0 clamp(24px, 5vw, 40px);
+      }
+      .url-row {
+        font-family: var(--sans);
+        font-size: 14px;
+        color: var(--muted);
+        margin: 0 0 clamp(24px, 5vw, 32px);
+      }
+      .url {
+        font-family: var(--mono);
+        font-size: 15px;
+        color: var(--ink);
+        background: var(--accent-soft);
+        padding: 2px 6px;
+        border-radius: 4px;
+      }
+      .divider {
+        font-family: var(--sans);
+        font-size: 12px;
+        color: var(--muted);
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        margin: clamp(24px, 5vw, 32px) 0 clamp(16px, 3vw, 20px);
+        border-top: 1px solid var(--rule);
+        padding-top: 16px;
+      }
+      .stream {
+        font-family: var(--serif);
+        font-size: 15.5px;
+        line-height: 1.7;
+        min-height: 200px;
+        white-space: pre-wrap;
+      }
+      .cursor {
+        display: inline-block;
+        width: 0.6ch;
+        background: var(--ink);
+        animation: blink 1s steps(2, start) infinite;
+        vertical-align: -2px;
+      }
+      .cursor::before {
+        content: "\00a0";
+      }
+      @keyframes blink {
+        50% {
+          opacity: 0;
+        }
+      }
+      .cancel {
+        display: block;
+        margin: clamp(32px, 6vw, 48px) 0 0;
+        font-family: var(--sans);
+        font-size: 13.5px;
+        color: var(--muted);
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        padding: 0;
+      }
+      .cancel:hover {
+        color: var(--accent);
+        text-decoration: underline;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <p class="wordmark">ace.study</p>
+
+      <p class="url-row">
+        Your site will live at:
+        <span class="url" id="urlSlot">ace.study/{id}</span>
+        <button id="copyBtn" aria-label="Copy URL" style="margin-left:4px">⧉</button>
+      </p>
+
+      <p class="divider">Generating</p>
+
+      <div class="stream" id="stream" aria-live="polite">
+        <span class="cursor" aria-hidden="true"></span>
+      </div>
+
+      <button class="cancel" id="cancelBtn" type="button">Cancel</button>
+    </main>
+
+    <script>
+      // TODO: wire up SSE consumer. For scaffold only — next commit adds
+      // src/lib/sse-client.ts and connects it here.
+      const id = document.getElementById("urlSlot")?.textContent?.trim();
+      console.log("generation-id:", id);
+    </script>
+  </body>
+</html>

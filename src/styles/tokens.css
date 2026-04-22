@@ -1,0 +1,59 @@
+/* Design tokens. Inherits the OSS ace-study-components palette so the
+   landing/generating/study-site surfaces feel continuous. See
+   docs/phase2-hosted-plan.md → "Visual DNA" for the rationale. */
+
+:root {
+  --paper: #faf8f3;
+  --ink: #1a1a1a;
+  --muted: #6b6257;
+  --rule: #e8e2d6;
+  --accent: #b8451f;
+  --accent-soft: #f3e6dd;
+  --mark: #fff3c4;
+  --ok: #229954;
+  --warn: #c0392b;
+
+  --serif: Charter, "Iowan Old Style", "Source Serif Pro", Georgia,
+    "Times New Roman", serif;
+  --sans: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Helvetica Neue", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #171410;
+    --ink: #eae2d4;
+    --muted: #a79f94;
+    --rule: #2a241c;
+    --accent: #e88a5c;
+    --accent-soft: #2c1f16;
+    --mark: #4a3a10;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--paper);
+  color: var(--ink);
+}
+body {
+  font-family: var(--serif);
+  font-size: clamp(15px, 0.9vw + 12px, 17px);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

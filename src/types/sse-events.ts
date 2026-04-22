@@ -1,0 +1,27 @@
+// SSE event types streamed from /api/generate to the client.
+// Locked in ADR 001 + ADR 002. Do not add events without updating both
+// the worker emitter (src/pages/api/generate.ts) and the client parser
+// (src/lib/sse-client.ts) in the same commit.
+
+export type ErrorCode =
+  | "rate_limited"
+  | "spend_cap_hit"
+  | "turnstile_failed"
+  | "anthropic_down"
+  | "invalid_pdf"
+  | "internal";
+
+export type GenerateEvent =
+  /** FIRST event — tells the client where the site will live so they can
+   *  copy the URL before generation finishes. */
+  | { type: "slug"; slug: string }
+  /** Live narration chunks from the model ("Reading Lecture 3..."). */
+  | { type: "narration"; text: string }
+  | { type: "section_start"; id: string; title: string }
+  | { type: "section_complete"; id: string }
+  | { type: "section_failed"; id: string; reason: string }
+  | { type: "validation_error"; chunk: string; retry: number }
+  /** Terminal success. `partial` true if any section_failed events fired. */
+  | { type: "complete"; slug: string; partial: boolean }
+  /** Terminal error. Stream ends after this. */
+  | { type: "error"; code: ErrorCode; message: string; retryable: boolean };

@@ -1,0 +1,128 @@
+---
+// Landing page. Quiet / editorial voice — the first paragraph sets the tone
+// for the whole product. Don't add marketing fluff here (see ADR 001 + the
+// design review in docs/phase2-hosted-plan.md).
+import "~/styles/tokens.css";
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ace.study — lecture PDFs → interactive study site</title>
+    <meta
+      name="description"
+      content="Drop three lecture PDFs. Get back an interactive study site in 90 seconds. No account. Link-shareable."
+    />
+    <!-- Open Graph for share cards -->
+    <meta property="og:title" content="ace.study" />
+    <meta
+      property="og:description"
+      content="Lecture PDFs in, interactive study site out. 90 seconds. No account."
+    />
+    <meta property="og:type" content="website" />
+    <style>
+      .wrap {
+        max-width: 52ch;
+        margin: 0 auto;
+        padding: clamp(24px, 6vw, 56px) clamp(16px, 5vw, 24px)
+          clamp(48px, 8vw, 120px);
+      }
+      .wordmark {
+        font-family: var(--sans);
+        font-weight: 600;
+        font-size: 15px;
+        letter-spacing: -0.01em;
+        color: var(--ink);
+        margin: 0 0 clamp(32px, 8vw, 56px);
+      }
+      .lede {
+        font-size: clamp(18px, 1vw + 14px, 22px);
+        line-height: 1.45;
+        margin: 0 0 clamp(24px, 5vw, 32px);
+      }
+      .drop {
+        border: 1.5px dashed var(--rule);
+        border-radius: 10px;
+        padding: clamp(32px, 8vw, 56px) 20px;
+        text-align: center;
+        font-family: var(--sans);
+        font-size: 15px;
+        color: var(--muted);
+        background: transparent;
+        width: 100%;
+        cursor: pointer;
+        transition:
+          border-color 0.15s ease,
+          color 0.15s ease,
+          background 0.15s ease;
+      }
+      .drop:hover,
+      .drop:focus-visible {
+        border-color: var(--accent);
+        color: var(--ink);
+        background: var(--accent-soft);
+        outline: none;
+      }
+      .example {
+        margin: clamp(20px, 4vw, 28px) 0 0;
+        font-family: var(--sans);
+        font-size: 13.5px;
+        color: var(--muted);
+      }
+      .example a {
+        font-family: var(--mono);
+        font-size: 13px;
+      }
+      .foot {
+        margin: clamp(56px, 10vw, 96px) 0 0;
+        font-family: var(--sans);
+        font-size: 12.5px;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <p class="wordmark">ace.study</p>
+
+      <p class="lede">
+        Drop three lecture PDFs. Get back an interactive study site in 90
+        seconds. No account. Link-shareable.
+      </p>
+
+      <button
+        class="drop"
+        id="uploadBtn"
+        type="button"
+        aria-label="Add lecture PDFs"
+      >
+        Tap to add PDFs or paste a link
+      </button>
+
+      <p class="example">
+        See an example: <a href="/">ace.study/bme804-ex</a> <em>(soon)</em>
+      </p>
+
+      <p class="foot">
+        Open source on
+        <a href="https://github.com/TenzinDhonyoe/ace">GitHub</a>.
+      </p>
+    </main>
+
+    <script>
+      // Upload zone is just a button on the landing page. Real drag-drop +
+      // pdf.js extraction is lazy-loaded on first click so we don't ship a
+      // 2MB pdf.js bundle to visitors who never upload (see design review).
+      document
+        .getElementById("uploadBtn")
+        ?.addEventListener("click", async () => {
+          // TODO: dynamic import pdf.js + open file picker
+          alert(
+            "Upload flow is a stub. Next commit wires up pdf.js + the generate API.",
+          );
+        });
+    </script>
+  </body>
+</html>

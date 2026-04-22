@@ -1,0 +1,29 @@
+---
+// Rendered study site at /<slug>. Proxies HTML from Blob via the API
+// route so we can set X-Robots-Tag + future analytics. See ADR 004.
+import { isValidSlug } from "~/lib/slug";
+
+const { slug } = Astro.params;
+
+if (!isValidSlug(slug)) {
+  return new Response("Not found", { status: 404 });
+}
+
+// Proxy HTML from /api/site/[slug]. In dev this hits the local API route;
+// in prod, Vercel routes both paths to the same project.
+const url = new URL(`/api/site/${slug}`, Astro.url);
+const upstream = await fetch(url);
+
+if (!upstream.ok) {
+  return new Response("Not found", { status: 404 });
+}
+
+const html = await upstream.text();
+return new Response(html, {
+  headers: {
+    "Content-Type": "text/html; charset=utf-8",
+    "X-Robots-Tag": "noindex, nofollow",
+    "Cache-Control": "public, max-age=300, stale-while-revalidate=3600",
+  },
+});
+---

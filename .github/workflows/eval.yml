@@ -1,0 +1,26 @@
+name: Eval
+
+# Runs the generation quality eval harness. Weekly + on-demand, NOT on
+# every PR — at ~$2/run against Claude Opus, nightly would eat 60% of the
+# $100/mo Anthropic budget (see ADR 005).
+
+on:
+  schedule:
+    - cron: "0 8 * * 1" # Mondays 08:00 UTC
+  workflow_dispatch:
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.10"
+      - run: bun install --frozen-lockfile
+      - name: Run eval harness
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          echo "TODO: wire eval harness once ace-study-eval package exists."
+          echo "Placeholder — exits 0 so the schedule trigger doesn't churn."
