@@ -94,6 +94,8 @@ export async function* streamGenerate(
   let jsonBuffer = "";
   let totalDeltaBytes = 0;
   let narrationEmitted = 0;
+  let composingEmitted = false;
+  let lastProgressBytes = 0;
 
   for await (const event of stream) {
     if (
@@ -105,6 +107,29 @@ export async function* streamGenerate(
     const delta = event.delta.text;
     totalDeltaBytes += delta.length;
     buffer += delta;
+
+    // First delta — tell the UI we've moved from "reading" to "composing"
+    if (!composingEmitted) {
+      yield {
+        type: "progress",
+        stage: "composing",
+        tokensOut: 0,
+        estMaxTokens: MAX_OUTPUT_TOKENS,
+      };
+      composingEmitted = true;
+    }
+
+    // Throttle progress pings to every ~400 chars (~100 tokens) so we
+    // don't flood the SSE channel.
+    if (totalDeltaBytes - lastProgressBytes > 400) {
+      yield {
+        type: "progress",
+        stage: "composing",
+        tokensOut: Math.round(totalDeltaBytes / 4),
+        estMaxTokens: MAX_OUTPUT_TOKENS,
+      };
+      lastProgressBytes = totalDeltaBytes;
+    }
 
     if (!inJson) {
       const openFence = buffer.indexOf("```json");

@@ -142,8 +142,9 @@ async function runPipeline(
       const slug = newSlug();
       emit({ type: "slug", slug });
 
-      // Immediate heartbeat so the UI never looks dead while the model
-      // works up its first tokens (TTFT on a cold cache is 5-15s).
+      // Kick off the progress UI so it's visible before the model
+      // produces its first token (TTFT on cold cache is 5-15s).
+      emit({ type: "progress", stage: "reading" });
       emit({
         type: "narration",
         text: `Reading ${Math.round(body.pdfText.length / 1000)}k characters of lecture material…\n\n`,
@@ -188,6 +189,7 @@ async function runPipeline(
       }
 
       // --- 7. Render ---
+      emit({ type: "progress", stage: "rendering" });
       let html: string;
       try {
         html = render(config);
@@ -200,6 +202,7 @@ async function runPipeline(
       }
 
       // --- 8. Store to Blob ---
+      emit({ type: "progress", stage: "storing" });
       try {
         await storeSite(slug, html, config);
       } catch (e) {
@@ -222,6 +225,7 @@ async function runPipeline(
       }
 
       // --- 10. Done ---
+      emit({ type: "progress", stage: "done" });
       emit({ type: "complete", slug, partial: false });
       controller.close();
   }

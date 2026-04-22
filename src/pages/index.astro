@@ -149,9 +149,52 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
         color: var(--muted);
         letter-spacing: 0.06em;
         text-transform: uppercase;
-        margin: 32px 0 20px;
+        margin: 32px 0 6px;
         border-top: 1px solid var(--rule);
         padding-top: 16px;
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 12px;
+      }
+      .divider .pct {
+        letter-spacing: 0;
+        text-transform: none;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .bar {
+        height: 3px;
+        background: var(--rule);
+        border-radius: 2px;
+        overflow: hidden;
+        margin: 0 0 20px;
+      }
+      .bar__fill {
+        height: 100%;
+        width: 0%;
+        background: var(--accent);
+        transition:
+          width 0.4s ease,
+          background 0.3s ease;
+      }
+      .bar__fill.is-indeterminate {
+        width: 30% !important;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--accent),
+          transparent
+        );
+        animation: slide 1.4s ease-in-out infinite;
+      }
+      @keyframes slide {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(333%);
+        }
       }
       .stream {
         font-family: var(--serif);
@@ -258,7 +301,21 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
           >
         </p>
 
-        <p class="divider">Generating</p>
+        <p class="divider">
+          <span id="stageLabel">Preparing…</span>
+          <span class="pct" id="stagePct"></span>
+        </p>
+        <div class="bar">
+          <div
+            class="bar__fill is-indeterminate"
+            id="barFill"
+            role="progressbar"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-label="Generation progress"
+          >
+          </div>
+        </div>
 
         <div class="stream" id="stream" aria-live="polite">
           <span class="cursor" aria-hidden="true"></span>
@@ -290,6 +347,32 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
       const copyBtn = document.getElementById("copyBtn") as HTMLButtonElement;
       const stream = document.getElementById("stream") as HTMLDivElement;
       const errorBox = document.getElementById("errorBox") as HTMLDivElement;
+      const stageLabel = document.getElementById(
+        "stageLabel",
+      ) as HTMLSpanElement;
+      const stagePct = document.getElementById(
+        "stagePct",
+      ) as HTMLSpanElement;
+      const barFill = document.getElementById("barFill") as HTMLDivElement;
+
+      const STAGE_COPY: Record<string, string> = {
+        reading: "Reading lecture material",
+        composing: "Composing study site",
+        rendering: "Rendering HTML",
+        storing: "Publishing",
+        done: "Done",
+      };
+      // Rough weights so the bar moves even outside the composing stage.
+      // Composing is by far the longest (60-120s of model work), so it
+      // takes the lion's share of the bar.
+      const STAGE_BASE: Record<string, number> = {
+        reading: 2,
+        composing: 5, // composing fills 5-90 based on tokens
+        rendering: 92,
+        storing: 96,
+        done: 100,
+      };
+      const STAGE_COMPOSING_CEIL = 90;
 
       let picked: File[] = [];
 
@@ -397,14 +480,15 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
                 slug = event.slug;
                 genUrl.textContent = `${location.host}/${slug}`;
                 history.replaceState(null, "", `/g/${slug}`);
-                // Remove the blinking cursor once narration starts
+                break;
+              case "progress":
+                handleProgress(event);
                 break;
               case "narration":
                 appendNarration(event.text);
                 break;
               case "complete":
                 if (event.slug) {
-                  // Tiny delay so the last narration line gets to render
                   setTimeout(() => {
                     location.href = `/${event.slug}`;
                   }, 600);
@@ -417,6 +501,53 @@ const turnstileEnabled = turnstileSiteKey.length > 0;
           }
         } catch (e) {
           showError(`Stream disconnected: ${(e as Error).message}`);
+        }
+
+        function handleProgress(event: {
+          stage: string;
+          tokensOut?: number;
+          estMaxTokens?: number;
+        }) {
+          const base = STAGE_BASE[event.stage] ?? 0;
+          const copy = STAGE_COPY[event.stage] ?? event.stage;
+          stageLabel.textContent = copy;
+
+          let pct: number;
+          if (
+            event.stage === "composing" &&
+            event.tokensOut !== undefined &&
+            event.estMaxTokens
+          ) {
+            // Map token progress into the 5–90 span of the bar
+            const ratio = Math.min(1, event.tokensOut / event.estMaxTokens);
+            pct = base + (STAGE_COMPOSING_CEIL - base) * ratio;
+            // Real data — drop the indeterminate shimmer
+            barFill.classList.remove("is-indeterminate");
+          } else {
+            pct = base;
+            // Reading / rendering / storing have no token signal;
+            // show an indeterminate shimmer so the bar feels alive
+            if (event.stage !== "composing") {
+              barFill.classList.add("is-indeterminate");
+            }
+          }
+
+          // For determinate stages we set width; indeterminate ignores width
+          barFill.style.width = `${pct.toFixed(1)}%`;
+          barFill.setAttribute("aria-valuenow", String(Math.round(pct)));
+
+          // Show a % only once we're in the composing stage with real data
+          if (
+            event.stage === "composing" &&
+            event.tokensOut !== undefined &&
+            event.estMaxTokens
+          ) {
+            stagePct.textContent = `${Math.round(pct)}%`;
+          } else if (event.stage === "done") {
+            stagePct.textContent = "100%";
+          } else {
+            stagePct.textContent = "";
+          }
         }
       });
 

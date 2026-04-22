@@ -11,10 +11,28 @@ export type ErrorCode =
   | "invalid_pdf"
   | "internal";
 
+/** Pipeline stages, in order. */
+export type Stage =
+  | "reading"    // extracting lecture material, before model call
+  | "composing"  // model is streaming the config
+  | "rendering"  // server is running renderSite()
+  | "storing"    // writing to Blob
+  | "done";
+
 export type GenerateEvent =
   /** FIRST event — tells the client where the site will live so they can
    *  copy the URL before generation finishes. */
   | { type: "slug"; slug: string }
+  /** Progress signal: stage + approximate completion. `tokensOut` is a
+   *  rolling count of output characters from the model (not true tokens —
+   *  ~4 chars/token so it's a reasonable proxy). `estMaxTokens` gives the
+   *  client a denominator for a progress bar. */
+  | {
+      type: "progress";
+      stage: Stage;
+      tokensOut?: number;
+      estMaxTokens?: number;
+    }
   /** Live narration chunks from the model ("Reading Lecture 3..."). */
   | { type: "narration"; text: string }
   | { type: "section_start"; id: string; title: string }
